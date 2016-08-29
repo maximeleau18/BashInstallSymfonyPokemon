@@ -19,23 +19,38 @@ HTTPDUSER='www-data'
 APP_CONSOLE='/var/www/pokemonSymfony'
 ERR=0
 
+echo $'####Installation Symfony Pokemon\n####Develop by Maxime LEAU\n####From https://github.com/maximeleau18/PokemonSymfony.git\n'
+echo 'Setup Configuration...';
+
 # Ask database root password
-for i in `seq 1 3` 
-do 
-	read -p 'Enter MySQL root password : ' MYSQL_ROOT_PWD_INPUT
-	read -p 'Confirm password : ' MYSQL_ROOT_PWD_CONF
+# Check user input
+for i in `seq 1 3`;
+do
+	read -s -p 'Enter MySQL root password : ' MYSQL_ROOT_PWD_INPUT;
+	echo ;
+	read -s -p 'Confirm password : ' MYSQL_ROOT_PWD_CONF;
+	echo ;
+	
 	if [ $MYSQL_ROOT_PWD_INPUT == $MYSQL_ROOT_PWD_CONF ]; then
-		MYSQL_ROOT_PWD = MYSQL_ROOT_PWD_INPUT
-		ERR = 0
-		break
+		MYSQL_ROOT_PWD="$MYSQL_ROOT_PWD_INPUT"
+		if [ -z $MYSQL_ROOT_PWD ]; then
+			echo 'Password can not be empty.'
+		else
+			ERR=0
+			break		
+		fi
 	else
-		ERR = 1
 		echo 'Passwords do not match.'
+	fi
+	ERR=1
+	let "j = (3 - i)" 
+	if [ $j -gt 0 ]; then
+		echo $j ' essaie(s) restant(s)'
 	fi
 done
 
-if  [ ERR != 0 ]; then
-	exit ERR
+if [ $ERR -ne 0 ]; then
+	exit $ERR
 fi
 
 
@@ -51,11 +66,10 @@ apt-get install --assume-yes php5-curl
 # Download and Setup LAMP Server
 debconf-set-selections <<< "mysql-server mysql-server/root_password password $MYSQL_ROOT_PWD"
 debconf-set-selections <<< "mysql-server mysql-server/root_password_again password $MYSQL_ROOT_PWD"
-apt-get install --assume-yes mysql-server apache2 libapache2-mod-php5 php5
+apt-get install --assume-yes mysql-server apache2 libapache2-mod-php5 php5 php5-mysql
 
-# UPDATE BINARY VARS
+# Update Binary Vars
 CURL_BIN=$(which curl)
-#COMPOSER_BIN=$(which composer)
 A2ENSITE_BIN=$(which a2ensite)
 A2DISSITE_BIN=$(which a2dissite)
 PHP_BIN=$(which php)
@@ -70,22 +84,8 @@ else
    exit 2
 fi
 
-# Create Symfony Project
-#if [ -x $COMPOSER_BIN ]; then
-#   $COMPOSER_BIN create-project --no-scripts --no-dev --verbose --prefer-dist --no-progress symfony/framework-standard-edition /var/www/symfony 2.8.0
-#else
-#   echo "Missing composer binary"
-#   exit 3
-#fi
-
-# Bootstrap symfony
-#if [ -x $PHP_BIN ]; thenaptitude
-#   echo "Bootsraping..."
-#   $PHP_BIN /var/www/symfony/vendor/sensio/distribution-bundle/Sensio/Bundle/DistributionBundle/Resources/bin/build_bootstrap.php /var/www/symfony/app
-#else
-#   echo "Missing php binary"
-#   exit 1
-#fi
+# Update Binary Var
+COMPOSER_BIN=$(which composer)
 
 # Download and Install Git
 apt-get install --assume-yes git
@@ -95,29 +95,35 @@ echo "Installing git..."
 if [ -d "$APP_CONSOLE" ] ; then
 	rm -R "$APP_CONSOLE"
 	echo "Remove old pokemonSymfony repository"
+	mkdir "$APP_CONSOLE"
+else
+	mkdir "$APP_CONSOLE"
 fi
+
+# Remove ssl verification
+git config --global http.sslverify false
 
 # Clone the repository of pokemonSymfony
 git clone "$GIT_REPO" "$APP_CONSOLE"
 echo "Clone repository pokemonSymfony..."
 
 # Edit VHost Configuration File
-cat >/etc/apache2/sites-available/pokemonSymfony.conf <<EOL
+cat >/etc/apache2/sites-available/pokemonSymfony <<EOL
 <VirtualHost *:80>
     ServerAdmin maxime.leau@imie-rennes.fr
     DocumentRoot "$APP_CONSOLE/web"
     DirectoryIndex app_dev.php
-    #ServerName example.local
+    #ServerName localhost
     #ServerAlias www.dummy-host.example.com
     ErrorLog /var/log/apache2/pokemonSymfony-error.log
     CustomLog /var/log/apache2/pokemonSymfony-access.log combined
 
 <Directory "$APP_CONSOLE/web">
-	#AddDefaultCharset utf-8
-	Order Allow,Deny
+    #AddDefaultCharset utf-8
+    Order Allow,Deny
     #Deny from all
     #Require all granted
-	AllowOverride all
+    AllowOverride all
     Allow from all
 </Directory>
 </VirtualHost>
@@ -128,10 +134,10 @@ echo "Create VHost Apache2"
 # Update pokemonSymfony Project
 if [ -x $COMPOSER_BIN ]; then
 	cd $APP_CONSOLE
-   $COMPOSER_BIN update --no-scripts --no-dev --verbose --prefer-dist --no-progress
+   $COMPOSER_BIN update --no-scripts --verbose --prefer-dist --no-progress
 else
-   echo "Missing composer binary"
-      exit 3
+   echo "Missing composer binary";
+   exit 3
 fi
 
 # Bootstrap Symfony
@@ -139,11 +145,11 @@ if [ -x $PHP_BIN ]; then
    echo "Bootsraping..."
    $PHP_BIN "$APP_CONSOLE/vendor/sensio/distribution-bundle/Sensio/Bundle/DistributionBundle/Resources/bin/build_bootstrap.php" "$APP_CONSOLE/app"
 else
-   echo "Missing php binary"
+   echo "Missing php binary";
    exit 4
 fi
 
-# parameters.yml
+# Set parameters.yml
 cat >"$APP_CONSOLE/app/config/parameters.yml" <<EOL
 parameters:
     database_driver:   pdo_mysql
@@ -171,7 +177,7 @@ if [ -x $A2DISSITE_BIN ]; then
    echo "Disable default site"
 fi
 
-# Enable jobeet site
+# Enable pokemonSymfony site
 if [ -x $A2DISSITE_BIN ]; then
    $A2ENSITE_BIN pokemonSymfony
    echo "Enable pokemonSymfony site"
@@ -181,30 +187,21 @@ fi
 service apache2 restart
 
 # Install setfacl to grant rights to www-data
-aptitude install --assume-yes acl 
+apt-get install --assume-yes acl
 
 # Fixing permissions for app/cache and app/logs
-#setfacl -R -m u:"$HTTPDUSER":rwX -m u:`whoami`:rwX "$APP_CONSOLE/app/cache" "$APP_CONSOLE/app/logs"
-#setfacl -dR -m u:"$HTTPDUSER":rwX -m u:`whoami`:rwX "$APP_CONSOLE/app/cache" "$APP_CONSOLE/app/logs"
+setfacl -R -m u:"$HTTPDUSER":rwX -m u:`whoami`:rwX "$APP_CONSOLE/app/cache" "$APP_CONSOLE/app/logs"
+setfacl -dR -m u:"$HTTPDUSER":rwX -m u:`whoami`:rwX "$APP_CONSOLE/app/cache" "$APP_CONSOLE/app/logs"
 
-# Create Database jobeet
-#$PHP_BIN $APP_CONSOLE app/console doctrine:database:drop -n --force
-#$PHP_BIN $APP_CONSOLE app/console doctrine:database:create
-#$PHP_BIN $APP_CONSOLE app/console doctrine:schema:create
-#$PHP_BIN $APP_CONSOLE app/console doctrine:fixtures:load -n
+# Create Database pokemonSymfony
+$PHP_BIN $APP_CONSOLE app/console doctrine:database:drop -n --force
+$PHP_BIN $APP_CONSOLE app/console doctrine:database:create
+$PHP_BIN $APP_CONSOLE app/console doctrine:schema:create
+$PHP_BIN $APP_CONSOLE app/console doctrine:fixtures:load -n
 
 # Clearing Symphony app cache
-#$PHP_BIN $APP_CONSOLE app/console cache:clear --env=prod
-#$PHP_BIN $APP_CONSOLE app/console cache:clear --env=dev
+$PHP_BIN $APP_CONSOLE app/console cache:clear --env=prod
+$PHP_BIN $APP_CONSOLE app/console cache:clear --env=dev
 
-
-
-
-
-
-
-
-
-
-
-
+# Launch browser to http://localhost/app_dev.php/api/doc
+sudo -u deploy iceweasel http://localhost/app_dev.php/api/doc
